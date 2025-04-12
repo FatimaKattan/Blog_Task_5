@@ -4,46 +4,75 @@ namespace App\Http\Controllers;
 
 use App\Models\Comment;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class CommentController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function index($postId)
     {
-        //
+        $comments = Comment::with('user')
+            ->where('post_id', $postId)
+            ->latest()
+            ->get();
+
+        return response()->json([
+            'data' => $comments,
+        ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
+    public function store(Request $request, $postId)
     {
-        //
+        $validated = $request->validate([
+            'content' => 'required|string|max:1000'
+        ]);
+
+        $comment = Comment::create([
+            'user_id' => Auth::id(), // المستخدم الحالي
+            'post_id' => (int)$postId,
+            'content' => $validated['content']
+        ]);
+
+        return response()->json([
+            'data' => $comment->load('user'), // تحميل بيانات المستخدم مع التعليق
+        ], 201);
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Comment $comment)
+    // تحديث تعليق
+    public function update(Request $request, $commentId)
     {
-        //
+        $comment = Comment::findOrFail($commentId);
+
+        // التأكد من أن المستخدم هو صاحب التعليق
+        if ($comment->user_id !== Auth::id()) {
+            return response()->json(['message' => 'You are not authorized to perform this action.'], 403);
+        }
+
+        $validated = $request->validate([
+            'content' => 'required|string|max:1000'
+        ]);
+
+        $comment->update($validated);
+
+        return response()->json([
+            'data' => $comment->fresh()->load('user'),
+            'message' =>'Comment updated successfully'
+        ]);
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Comment $comment)
+    // حذف تعليق
+    public function destroy($commentId)
     {
-        //
-    }
+        $comment = Comment::findOrFail($commentId);
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Comment $comment)
-    {
-        //
+        // التأكد من أن المستخدم هو صاحب التعليق أو صاحب المنشور
+        if ($comment->user_id !== Auth::id() && $comment->post->user_id !== Auth::id()) {
+            return response()->json(['message' =>'You are not authorized to perform this action.'], 403);
+        }
+
+        $comment->delete();
+
+        return response()->json([
+            'message' =>'Comment deleted successfully' 
+        ]);
     }
 }
